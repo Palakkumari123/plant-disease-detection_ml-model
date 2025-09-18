@@ -1,17 +1,16 @@
 import os
-
-# -------------------------------
-# Force CPU mode and suppress TF logs
-# -------------------------------
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"   # Hide info/warning logs
-
 from fastapi import FastAPI, UploadFile, File
 import uvicorn
 import numpy as np
 from tensorflow.keras.models import load_model
 from PIL import Image
 import gdown
+
+# -------------------------------
+# Force CPU mode and suppress TF logs
+# -------------------------------
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"   # Hide info/warnings
 
 # -------------------------------
 # Model Settings
@@ -27,13 +26,16 @@ if not GOOGLE_DRIVE_LINK:
 # Download model if not present
 if not os.path.exists(MODEL_PATH):
     print("Downloading model from Google Drive...")
-    if "drive.google.com/file/d/" in GOOGLE_DRIVE_LINK:
-        file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
-        download_url = f"https://drive.google.com/uc?id={file_id}"
-    else:
-        download_url = GOOGLE_DRIVE_LINK
-    gdown.download(download_url, MODEL_PATH, quiet=False)
-    print("Download complete!")
+    try:
+        if "drive.google.com/file/d/" in GOOGLE_DRIVE_LINK:
+            file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
+            download_url = f"https://drive.google.com/uc?id={file_id}"
+        else:
+            download_url = GOOGLE_DRIVE_LINK
+        gdown.download(download_url, MODEL_PATH, quiet=False)
+        print("Download complete!")
+    except Exception as e:
+        print("Error downloading model:", e)
 
 # Replace with your 38 disease class names
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
@@ -82,6 +84,7 @@ async def predict(file: UploadFile = File(...)):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
