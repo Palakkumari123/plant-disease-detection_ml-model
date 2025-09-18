@@ -11,27 +11,24 @@ import gdown
 # -------------------------------
 MODEL_PATH = "plant_disease_prediction_model.h5"
 
-# Get Google Drive link from environment variable
+# Google Drive link from environment variable
 GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")
-
 if not GOOGLE_DRIVE_LINK:
     raise ValueError("Please set the MODEL_LINK environment variable on Render!")
 
 # Download model if not present
 if not os.path.exists(MODEL_PATH):
     print("Downloading model from Google Drive...")
-
-    # Convert standard Google Drive share link to direct download
+    # Convert standard share link to direct download
     if "drive.google.com/file/d/" in GOOGLE_DRIVE_LINK:
         file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
         download_url = f"https://drive.google.com/uc?id={file_id}"
     else:
-        download_url = GOOGLE_DRIVE_LINK  # fallback if already a direct link
-
+        download_url = GOOGLE_DRIVE_LINK  # fallback
     gdown.download(download_url, MODEL_PATH, quiet=False)
     print("Download complete!")
 
-# Load the model
+# Load model
 print("Loading model...")
 try:
     model = load_model(MODEL_PATH)
@@ -54,13 +51,11 @@ def home():
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
-        # Open and preprocess the image
         image = Image.open(file.file).convert("RGB")
         image = image.resize((224, 224))
         img_array = np.array(image) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)  # shape: (1, 224, 224, 3)
+        img_array = np.expand_dims(img_array, axis=0)
 
-        # Predict
         prediction = model.predict(img_array)
         predicted_class = int(np.argmax(prediction))
         confidence = float(np.max(prediction))
@@ -72,4 +67,12 @@ async def predict(file: UploadFile = File(...)):
         }
     except Exception as e:
         return {"error": str(e)}
+
+# -------------------------------
+# Uvicorn entry for Render
+# -------------------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
 
