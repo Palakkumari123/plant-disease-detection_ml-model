@@ -17,8 +17,9 @@ import gdown
 # Model Settings
 # -------------------------------
 MODEL_PATH = "plant_disease_prediction_model.h5"
+MODEL = None  # Lazy loading
 
-# Get Google Drive link from environment variable
+# Google Drive link from environment variable
 GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")
 if not GOOGLE_DRIVE_LINK:
     raise ValueError("Please set the MODEL_LINK environment variable on Render!")
@@ -26,7 +27,6 @@ if not GOOGLE_DRIVE_LINK:
 # Download model if not present
 if not os.path.exists(MODEL_PATH):
     print("Downloading model from Google Drive...")
-    # Convert standard share link to direct download
     if "drive.google.com/file/d/" in GOOGLE_DRIVE_LINK:
         file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
         download_url = f"https://drive.google.com/uc?id={file_id}"
@@ -34,14 +34,6 @@ if not os.path.exists(MODEL_PATH):
         download_url = GOOGLE_DRIVE_LINK
     gdown.download(download_url, MODEL_PATH, quiet=False)
     print("Download complete!")
-
-# Load model
-print("Loading model...")
-try:
-    model = load_model(MODEL_PATH)
-    print("Model loaded successfully!")
-except Exception as e:
-    raise RuntimeError(f"Failed to load model: {e}")
 
 # Replace with your 38 disease class names
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
@@ -57,15 +49,22 @@ def home():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
+    global MODEL
     try:
+        # Lazy load model
+        if MODEL is None:
+            print("Loading model...")
+            MODEL = load_model(MODEL_PATH)
+            print("Model loaded successfully!")
+
         # Open and preprocess image
         image = Image.open(file.file).convert("RGB")
-        image = image.resize((224, 224))
+        image = image.resize((128, 128))  # smaller image to reduce memory
         img_array = np.array(image) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
 
         # Predict
-        prediction = model.predict(img_array)
+        prediction = MODEL.predict(img_array)
         predicted_class = int(np.argmax(prediction))
         confidence = float(np.max(prediction))
 
@@ -83,6 +82,7 @@ async def predict(file: UploadFile = File(...)):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
