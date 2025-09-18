@@ -1,4 +1,4 @@
 __pycache__/
 *.pyc
 *.pyo
-*.log
+*.logplant_disease_prediction_model.h5
