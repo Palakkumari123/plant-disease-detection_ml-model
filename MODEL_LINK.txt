@@ -1,0 +1,2 @@
+ML model file (plant_disease_prediction_model.h5) is stored on Google Drive:
+https://drive.google.com/file/d/1U-g-6huZScZC1jepNdQhZHlOfxUiKyZw/view?usp=sharing
