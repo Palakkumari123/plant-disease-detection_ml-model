@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, UploadFile, File
 import uvicorn
 import numpy as np
@@ -11,7 +10,12 @@ import gdown  # pip install gdown
 # Google Drive Model Settings
 # -------------------------------
 MODEL_PATH = "plant_disease_prediction_model.h5"
-GOOGLE_DRIVE_LINK = "https://drive.google.com/uc?id=YOUR_FILE_ID"  # Replace YOUR_FILE_ID
+
+# Get the Google Drive link from environment variable
+GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")
+
+if not GOOGLE_DRIVE_LINK:
+    raise ValueError("Please set the MODEL_LINK environment variable on Render!")
 
 # Download model if not present locally
 if not os.path.exists(MODEL_PATH):
