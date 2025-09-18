@@ -4,31 +4,42 @@ import numpy as np
 from tensorflow.keras.models import load_model
 from PIL import Image
 import os
-import gdown  # pip install gdown
+import gdown
 
 # -------------------------------
-# Google Drive Model Settings
+# Model Settings
 # -------------------------------
 MODEL_PATH = "plant_disease_prediction_model.h5"
 
-# Get the Google Drive link from environment variable
+# Get Google Drive link from environment variable
 GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")
 
 if not GOOGLE_DRIVE_LINK:
     raise ValueError("Please set the MODEL_LINK environment variable on Render!")
 
-# Download model if not present locally
+# Download model if not present
 if not os.path.exists(MODEL_PATH):
     print("Downloading model from Google Drive...")
-    gdown.download(GOOGLE_DRIVE_LINK, MODEL_PATH, quiet=False)
+
+    # Convert standard Google Drive share link to direct download
+    if "drive.google.com/file/d/" in GOOGLE_DRIVE_LINK:
+        file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
+        download_url = f"https://drive.google.com/uc?id={file_id}"
+    else:
+        download_url = GOOGLE_DRIVE_LINK  # fallback if already a direct link
+
+    gdown.download(download_url, MODEL_PATH, quiet=False)
     print("Download complete!")
 
 # Load the model
 print("Loading model...")
-model = load_model(MODEL_PATH)
-print("Model loaded successfully!")
+try:
+    model = load_model(MODEL_PATH)
+    print("Model loaded successfully!")
+except Exception as e:
+    raise RuntimeError(f"Failed to load model: {e}")
 
-# Class names (replace with your 38 disease names)
+# Replace with your 38 disease class names
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
 
 # -------------------------------
@@ -42,21 +53,23 @@ def home():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    # Open the uploaded image
-    image = Image.open(file.file).convert("RGB")
-    image = image.resize((224, 224))   # match model input size
+    try:
+        # Open and preprocess the image
+        image = Image.open(file.file).convert("RGB")
+        image = image.resize((224, 224))
+        img_array = np.array(image) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)  # shape: (1, 224, 224, 3)
 
-    # Preprocess
-    img_array = np.array(image) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)  # shape: (1, 224, 224, 3)
+        # Predict
+        prediction = model.predict(img_array)
+        predicted_class = int(np.argmax(prediction))
+        confidence = float(np.max(prediction))
 
-    # Predict
-    prediction = model.predict(img_array)
-    predicted_class = int(np.argmax(prediction))
-    confidence = float(np.max(prediction))
+        return {
+            "predicted_class": predicted_class,
+            "class_name": CLASS_NAMES[predicted_class],
+            "confidence": confidence
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
-    return {
-        "predicted_class": predicted_class,
-        "class_name": CLASS_NAMES[predicted_class],
-        "confidence": confidence
-    }
