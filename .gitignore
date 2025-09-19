@@ -1,6 +1,21 @@
+# Python cache and environment
 __pycache__/
 *.pyc
 *.pyo
-*.logplant_disease_prediction_model.h5
+*.pyd
+env/
+venv/
+.venv/
+*.swp
+*.log
+
+# Jupyter
+.ipynb_checkpoints
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Ignore original Keras model
 plant_disease_prediction_model.h5
-plant_disease_prediction_model.h5
+
