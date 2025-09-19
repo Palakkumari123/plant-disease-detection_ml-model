@@ -1,29 +1,29 @@
 import os
-from fastapi import FastAPI, UploadFile, File
 import uvicorn
 import numpy as np
+from fastapi import FastAPI, UploadFile, File
 from tensorflow.keras.models import load_model
 from PIL import Image
 import gdown
 
 # -------------------------------
-# Force CPU mode and suppress TF logs
+# TensorFlow & Environment Settings
 # -------------------------------
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Disable GPU
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"   # Hide info/warnings
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"   # Force CPU (Render free tier has no GPU)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"    # Suppress TF warnings/info
 
 # -------------------------------
 # Model Settings
 # -------------------------------
 MODEL_PATH = "plant_disease_prediction_model.h5"
-MODEL = None  # Lazy loading
+MODEL = None  # Lazy load to save memory
 
-# Google Drive link from environment variable
+# Google Drive model link (must be set in Render environment variables)
 GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")
 if not GOOGLE_DRIVE_LINK:
-    raise ValueError("Please set the MODEL_LINK environment variable on Render!")
+    raise ValueError("⚠️ Please set the MODEL_LINK environment variable on Render!")
 
-# Download model if not present
+# Download model if not already present
 if not os.path.exists(MODEL_PATH):
     print("Downloading model from Google Drive...")
     try:
@@ -33,9 +33,9 @@ if not os.path.exists(MODEL_PATH):
         else:
             download_url = GOOGLE_DRIVE_LINK
         gdown.download(download_url, MODEL_PATH, quiet=False)
-        print("Download complete!")
+        print("✅ Model download complete!")
     except Exception as e:
-        print("Error downloading model:", e)
+        print("❌ Error downloading model:", e)
 
 # Replace with your 38 disease class names
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
@@ -43,47 +43,52 @@ CLASS_NAMES = [f"Class_{i}" for i in range(38)]
 # -------------------------------
 # FastAPI App
 # -------------------------------
-app = FastAPI()
+app = FastAPI(title="🌱 Plant Disease Prediction API")
 
 @app.get("/")
 def home():
-    return {"message": "Plant Disease Prediction API is running"}
+    """Root endpoint to check if API is alive."""
+    return {"message": "🌱 Plant Disease Prediction API is running on Render!"}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
+    """Predict plant disease from an uploaded leaf image."""
     global MODEL
     try:
         # Lazy load model
         if MODEL is None:
-            print("Loading model...")
+            print("Loading model into memory...")
             MODEL = load_model(MODEL_PATH)
-            print("Model loaded successfully!")
+            print("✅ Model loaded successfully!")
 
-        # Open and preprocess image
+        # Preprocess image
         image = Image.open(file.file).convert("RGB")
-        image = image.resize((128, 128))  # smaller image to reduce memory
-        img_array = np.array(image) / 255.0
+        image = image.resize((128, 128))  # Resize for model input
+        img_array = np.array(image, dtype=np.float32) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
 
-        # Predict
+        # Run prediction
         prediction = MODEL.predict(img_array)
         predicted_class = int(np.argmax(prediction))
         confidence = float(np.max(prediction))
 
         return {
+            "filename": file.filename,
             "predicted_class": predicted_class,
             "class_name": CLASS_NAMES[predicted_class],
-            "confidence": confidence
+            "confidence": round(confidence, 4)
         }
+
     except Exception as e:
         return {"error": str(e)}
 
 # -------------------------------
-# Uvicorn entry for Render
+# Uvicorn Entry Point for Render
 # -------------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 10000))  # Render provides PORT env var
+    uvicorn.run("plant_api:app", host="0.0.0.0", port=port, reload=False)
+
 
 
 
