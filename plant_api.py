@@ -11,14 +11,14 @@ import tensorflow as tf
 app = FastAPI(title="Plant Disease Detection - Dynamic INT8")
 
 # -------------------------------
-# Model Path (absolute)
+# Absolute model path
 # -------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_FILENAME = "plant_model_dynamic_int8.tflite"
 TFLITE_MODEL_PATH = os.path.join(BASE_DIR, MODEL_FILENAME)
 
 # -------------------------------
-# Load TFLite dynamic INT8 model
+# Load TFLite model safely
 # -------------------------------
 try:
     interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
@@ -36,25 +36,30 @@ except Exception as e:
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
 
 # -------------------------------
-# Helper function: preprocess image
+# Helper: preprocess image
 # -------------------------------
 def preprocess_image(image: Image.Image) -> np.ndarray:
-    image = image.resize((224, 224))  # match model input
+    # Resize to match model input and normalize
+    image = image.resize((224, 224))
     img_array = np.array(image, dtype=np.float32) / 255.0
-    img_array = np.expand_dims(img_array, axis=0)  # batch dimension
-    return img_array  # dynamic INT8 uses FP32 input
+    img_array = np.expand_dims(img_array, axis=0)
+    return img_array
 
 # -------------------------------
-# Helper function: predict class
+# Helper: predict class
 # -------------------------------
 def predict(image: Image.Image):
-    input_data = preprocess_image(image)
-    interpreter.set_tensor(input_details[0]['index'], input_data)
-    interpreter.invoke()
-    predictions = interpreter.get_tensor(output_details[0]['index'])[0]
-    predicted_class = np.argmax(predictions)
-    confidence = float(np.max(predictions))
-    return CLASS_NAMES[predicted_class], confidence
+    try:
+        input_data = preprocess_image(image)
+        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.invoke()
+        predictions = interpreter.get_tensor(output_details[0]['index'])[0]
+        predicted_class = np.argmax(predictions)
+        confidence = float(np.max(predictions))
+        return CLASS_NAMES[predicted_class], confidence
+    except Exception as e:
+        print(f"Prediction error: {e}")
+        raise
 
 # -------------------------------
 # API Endpoints
@@ -73,6 +78,8 @@ async def predict_disease(file: UploadFile = File(...)):
             "confidence": confidence
         })
     except Exception as e:
+        # Prevent server crash → 502
+        print(f"POST /predict error: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 # -------------------------------
@@ -80,8 +87,10 @@ async def predict_disease(file: UploadFile = File(...)):
 # -------------------------------
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))  # Use Render assigned port
+    # Render assigns a port in $PORT; fallback to 8000 locally
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run("plant_api:app", host="0.0.0.0", port=port)
+
 
 
 
