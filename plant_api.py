@@ -6,9 +6,9 @@ from PIL import Image
 import tensorflow as tf
 
 # -------------------------------
-# Load TFLite Model
+# Load quantized TFLite Model
 # -------------------------------
-TFLITE_MODEL_PATH = "plant_disease_model.tflite"
+TFLITE_MODEL_PATH = "plant_disease_model_quant.tflite"
 
 interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
 interpreter.allocate_tensors()
@@ -26,25 +26,37 @@ CLASS_NAMES = [f"Class_{i}" for i in range(38)]
 
 def preprocess_image(image: Image.Image) -> np.ndarray:
     """Resize and normalize the uploaded image for the model"""
-    image = image.resize((224, 224))   # match your model's input size
+    image = image.resize((224, 224))  # match your model input size
     img_array = np.array(image, dtype=np.float32)
-    img_array = img_array / 255.0      # normalize
+    img_array = img_array / 255.0
     img_array = np.expand_dims(img_array, axis=0)
     return img_array
 
 def predict(image: Image.Image):
     """Run inference with TFLite"""
     input_data = preprocess_image(image)
+
+    # Quantized models may require int8 input
+    if input_details[0]['dtype'] == np.int8:
+        scale, zero_point = input_details[0]['quantization']
+        input_data = (input_data / scale + zero_point).astype(np.int8)
+
     interpreter.set_tensor(input_details[0]['index'], input_data)
     interpreter.invoke()
     predictions = interpreter.get_tensor(output_details[0]['index'])[0]
+
+    # Dequantize output if necessary
+    if output_details[0]['dtype'] == np.int8:
+        scale, zero_point = output_details[0]['quantization']
+        predictions = scale * (predictions.astype(np.float32) - zero_point)
+
     predicted_class = np.argmax(predictions)
     confidence = float(np.max(predictions))
     return CLASS_NAMES[predicted_class], confidence
 
 @app.get("/")
 async def home():
-    return {"message": "Plant Disease Detection API is running with TFLite 🚀"}
+    return {"message": "Plant Disease Detection API is running with TFLite Quantized Model 🚀"}
 
 @app.post("/predict")
 async def predict_disease(file: UploadFile = File(...)):
@@ -57,6 +69,7 @@ async def predict_disease(file: UploadFile = File(...)):
         })
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
 
 
 
