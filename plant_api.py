@@ -41,6 +41,7 @@ if os.path.exists(TFLITE_MODEL_PATH):
     INTERPRETER.allocate_tensors()
 
 # -------------------------------
+# Placeholder class names
 # Replace with your actual 38 classes
 # -------------------------------
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
@@ -89,6 +90,7 @@ async def predict(file: UploadFile = File(...)):
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
 
 
 
