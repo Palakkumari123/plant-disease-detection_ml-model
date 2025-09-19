@@ -1,62 +1,55 @@
-import os
 import numpy as np
+import os
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from PIL import Image
 import tensorflow as tf
 
 # -------------------------------
-# Load fully quantized INT8 TFLite Model
+# Load dynamic INT8 TFLite model
 # -------------------------------
-TFLITE_MODEL_PATH = "plant_disease_model_quant_int8.tflite"
-
+TFLITE_MODEL_PATH = "plant_model_dynamic_int8.tflite"
 interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
 interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-# -------------------------------
-# FastAPI app
-# -------------------------------
-app = FastAPI()
-
 # Dummy class names (Class_0 to Class_37)
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
 
+# -------------------------------
+# FastAPI app
+# -------------------------------
+app = FastAPI(title="Plant Disease Prediction Dynamic INT8")
+
+# -------------------------------
+# Helper function: preprocess image
+# -------------------------------
 def preprocess_image(image: Image.Image) -> np.ndarray:
-    """Resize and normalize the uploaded image for the model"""
-    image = image.resize((224, 224))  # match model input size
-    img_array = np.array(image, dtype=np.float32)
-    img_array = img_array / 255.0
-    img_array = np.expand_dims(img_array, axis=0)
+    image = image.resize((224, 224))  # match model input
+    img_array = np.array(image, dtype=np.float32) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)  # batch dimension
+    return img_array  # dynamic INT8 uses FP32 input
 
-    # Convert to int8 if model requires it
-    if input_details[0]['dtype'] == np.int8:
-        scale, zero_point = input_details[0]['quantization']
-        img_array = (img_array / scale + zero_point).astype(np.int8)
-
-    return img_array
-
+# -------------------------------
+# Helper function: predict class
+# -------------------------------
 def predict(image: Image.Image):
-    """Run inference with TFLite"""
     input_data = preprocess_image(image)
     interpreter.set_tensor(input_details[0]['index'], input_data)
     interpreter.invoke()
     predictions = interpreter.get_tensor(output_details[0]['index'])[0]
-
-    # Dequantize output if necessary
-    if output_details[0]['dtype'] == np.int8:
-        scale, zero_point = output_details[0]['quantization']
-        predictions = scale * (predictions.astype(np.float32) - zero_point)
-
     predicted_class = np.argmax(predictions)
     confidence = float(np.max(predictions))
     return CLASS_NAMES[predicted_class], confidence
 
+# -------------------------------
+# API endpoints
+# -------------------------------
 @app.get("/")
 async def home():
-    return {"message": "Plant Disease Detection API is running with INT8 Quantized TFLite Model 🚀"}
+    return {"message": "Plant Disease Detection API running with Dynamic INT8 TFLite Model 🚀"}
 
 @app.post("/predict")
 async def predict_disease(file: UploadFile = File(...)):
@@ -69,6 +62,11 @@ async def predict_disease(file: UploadFile = File(...)):
         })
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+# -------------------------------
+# Run with: uvicorn plant_api:app --host 0.0.0.0 --port 8000
+# -------------------------------
+
 
 
 
