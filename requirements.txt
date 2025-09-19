@@ -1,5 +1,5 @@
 fastapi==0.116.2
-uvicorn>=0.23
+uvicorn[standard]>=0.23
 tensorflow-cpu==2.20.0
 numpy>=1.26
 pillow>=10.0.0
