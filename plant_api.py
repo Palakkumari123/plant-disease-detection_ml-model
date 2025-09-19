@@ -15,33 +15,34 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 # -------------------------------
 # Model paths
 # -------------------------------
-MODEL_PATH = "plant_disease_prediction_model.h5"
 TFLITE_MODEL_PATH = "plant_disease_prediction_model.tflite"
 
-# Lazy load models
-MODEL = None
+# Lazy load interpreter
 INTERPRETER = None
 
 # -------------------------------
-# Download model from Google Drive if not exists
+# Download TFLite model from Google Drive if not exists
 # -------------------------------
-GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")
-if not os.path.exists(MODEL_PATH) and GOOGLE_DRIVE_LINK:
-    print("Downloading model from Google Drive...")
+GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")  # Set this in Render environment
+if not os.path.exists(TFLITE_MODEL_PATH) and GOOGLE_DRIVE_LINK:
+    print("Downloading TFLite model from Google Drive...")
     file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
     download_url = f"https://drive.google.com/uc?id={file_id}"
-    gdown.download(download_url, MODEL_PATH, quiet=False)
+    gdown.download(download_url, TFLITE_MODEL_PATH, quiet=False)
     print("Download complete!")
 
 # -------------------------------
-# Load TFLite model if exists
+# Load TFLite interpreter
 # -------------------------------
 if os.path.exists(TFLITE_MODEL_PATH):
     INTERPRETER = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
     INTERPRETER.allocate_tensors()
+    input_details = INTERPRETER.get_input_details()
+    output_details = INTERPRETER.get_output_details()
+else:
+    raise FileNotFoundError("TFLite model not found!")
 
 # -------------------------------
-# Placeholder class names
 # Replace with your actual 38 classes
 # -------------------------------
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
@@ -53,31 +54,21 @@ app = FastAPI(title="Plant Disease Prediction API")
 
 @app.get("/")
 def home():
-    return {"message": "API running. Use /predict for POST requests."}
+    return {"message": "API running. Use POST /predict with an image."}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
         # Read and preprocess image
         image = Image.open(file.file).convert("RGB")
-        image = image.resize((128, 128))
-        img_array = np.array(image) / 255.0
-        img_array = np.expand_dims(img_array, axis=0).astype(np.float32)
+        image = image.resize((128, 128))  # Match your model's input size
+        img_array = np.array(image, dtype=np.float32) / 255.0
+        img_array = np.expand_dims(img_array, axis=0)
 
-        # -------------------
-        # Use TFLite if available
-        # -------------------
-        if INTERPRETER:
-            input_details = INTERPRETER.get_input_details()
-            output_details = INTERPRETER.get_output_details()
-            INTERPRETER.set_tensor(input_details[0]['index'], img_array)
-            INTERPRETER.invoke()
-            prediction = INTERPRETER.get_tensor(output_details[0]['index'])
-        else:
-            global MODEL
-            if MODEL is None:
-                MODEL = tf.keras.models.load_model(MODEL_PATH)
-            prediction = MODEL.predict(img_array)
+        # TFLite prediction
+        INTERPRETER.set_tensor(input_details[0]['index'], img_array)
+        INTERPRETER.invoke()
+        prediction = INTERPRETER.get_tensor(output_details[0]['index'])
 
         predicted_class = int(np.argmax(prediction))
         confidence = float(np.max(prediction))
@@ -90,6 +81,7 @@ async def predict(file: UploadFile = File(...)):
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
 
 
 
