@@ -7,7 +7,7 @@ import tensorflow as tf
 import gdown
 
 # -------------------------------
-# Force CPU mode
+# Force CPU mode (optional)
 # -------------------------------
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -57,14 +57,14 @@ def home():
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     try:
-        # Read image
+        # Read and preprocess image
         image = Image.open(file.file).convert("RGB")
         image = image.resize((128, 128))
         img_array = np.array(image) / 255.0
         img_array = np.expand_dims(img_array, axis=0).astype(np.float32)
 
         # -------------------
-        # Use TFLite if available (fallback)
+        # Use TFLite if available
         # -------------------
         if INTERPRETER:
             input_details = INTERPRETER.get_input_details()
@@ -89,6 +89,7 @@ async def predict(file: UploadFile = File(...)):
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
 
 
 
