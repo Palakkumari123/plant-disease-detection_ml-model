@@ -1,93 +1,100 @@
 import os
+from fastapi import FastAPI, UploadFile, File
+from fastapi.responses import JSONResponse
 import uvicorn
 import numpy as np
-from fastapi import FastAPI, UploadFile, File
-from tensorflow.keras.models import load_model
 from PIL import Image
+import tensorflow as tf
 import gdown
 
 # -------------------------------
-# TensorFlow & Environment Settings
+# Force CPU mode
 # -------------------------------
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"   # Force CPU (Render free tier has no GPU)
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"    # Suppress TF warnings/info
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 # -------------------------------
-# Model Settings
+# Model paths
 # -------------------------------
 MODEL_PATH = "plant_disease_prediction_model.h5"
-MODEL = None  # Lazy load to save memory
+TFLITE_MODEL_PATH = "plant_disease_prediction_model.tflite"
 
-# Google Drive model link (must be set in Render environment variables)
+# Lazy load models
+MODEL = None
+TFLITE_MODEL = None
+INTERPRETER = None
+
+# Download model from Google Drive if not exists
 GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")
-if not GOOGLE_DRIVE_LINK:
-    raise ValueError("⚠️ Please set the MODEL_LINK environment variable on Render!")
-
-# Download model if not already present
-if not os.path.exists(MODEL_PATH):
+if not os.path.exists(MODEL_PATH) and GOOGLE_DRIVE_LINK:
     print("Downloading model from Google Drive...")
-    try:
-        if "drive.google.com/file/d/" in GOOGLE_DRIVE_LINK:
-            file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
-            download_url = f"https://drive.google.com/uc?id={file_id}"
-        else:
-            download_url = GOOGLE_DRIVE_LINK
-        gdown.download(download_url, MODEL_PATH, quiet=False)
-        print("✅ Model download complete!")
-    except Exception as e:
-        print("❌ Error downloading model:", e)
+    import gdown
+    file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
+    download_url = f"https://drive.google.com/uc?id={file_id}"
+    gdown.download(download_url, MODEL_PATH, quiet=False)
+    print("Download complete!")
 
-# Replace with your 38 disease class names
+# Load TFLite model if exists
+if os.path.exists(TFLITE_MODEL_PATH):
+    INTERPRETER = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
+    INTERPRETER.allocate_tensors()
+
+# Replace with actual 38 classes
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
 
 # -------------------------------
 # FastAPI App
 # -------------------------------
-app = FastAPI(title="🌱 Plant Disease Prediction API")
+app = FastAPI(title="Plant Disease Prediction API")
 
 @app.get("/")
 def home():
-    """Root endpoint to check if API is alive."""
-    return {"message": "🌱 Plant Disease Prediction API is running on Render!"}
+    return {"message": "API running. Use /predict for POST requests."}
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    """Predict plant disease from an uploaded leaf image."""
-    global MODEL
     try:
-        # Lazy load model
-        if MODEL is None:
-            print("Loading model into memory...")
-            MODEL = load_model(MODEL_PATH)
-            print("✅ Model loaded successfully!")
-
-        # Preprocess image
+        # Read image
         image = Image.open(file.file).convert("RGB")
-        image = image.resize((128, 128))  # Resize for model input
-        img_array = np.array(image, dtype=np.float32) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
+        image = image.resize((128, 128))
+        img_array = np.array(image) / 255.0
+        img_array = np.expand_dims(img_array, axis=0).astype(np.float32)
 
-        # Run prediction
-        prediction = MODEL.predict(img_array)
+        # -------------------
+        # Use TFLite if available (fallback)
+        # -------------------
+        if INTERPRETER:
+            input_details = INTERPRETER.get_input_details()
+            output_details = INTERPRETER.get_output_details()
+            INTERPRETER.set_tensor(input_details[0]['index'], img_array)
+            INTERPRETER.invoke()
+            prediction = INTERPRETER.get_tensor(output_details[0]['index'])
+        else:
+            # Fallback to original model
+            global MODEL
+            if MODEL is None:
+                MODEL = tf.keras.models.load_model(MODEL_PATH)
+            prediction = MODEL.predict(img_array)
+
         predicted_class = int(np.argmax(prediction))
         confidence = float(np.max(prediction))
 
-        return {
-            "filename": file.filename,
+        return JSONResponse({
             "predicted_class": predicted_class,
             "class_name": CLASS_NAMES[predicted_class],
-            "confidence": round(confidence, 4)
-        }
+            "confidence": confidence
+        })
 
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # -------------------------------
-# Uvicorn Entry Point for Render
+# Run on Render
 # -------------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # Render provides PORT env var
-    uvicorn.run("plant_api:app", host="0.0.0.0", port=port, reload=False)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+
 
 
 
