@@ -1,7 +1,6 @@
 import os
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
-import uvicorn
 import numpy as np
 from PIL import Image
 import tensorflow as tf
@@ -21,25 +20,29 @@ TFLITE_MODEL_PATH = "plant_disease_prediction_model.tflite"
 
 # Lazy load models
 MODEL = None
-TFLITE_MODEL = None
 INTERPRETER = None
 
+# -------------------------------
 # Download model from Google Drive if not exists
+# -------------------------------
 GOOGLE_DRIVE_LINK = os.environ.get("MODEL_LINK")
 if not os.path.exists(MODEL_PATH) and GOOGLE_DRIVE_LINK:
     print("Downloading model from Google Drive...")
-    import gdown
     file_id = GOOGLE_DRIVE_LINK.split("/d/")[1].split("/")[0]
     download_url = f"https://drive.google.com/uc?id={file_id}"
     gdown.download(download_url, MODEL_PATH, quiet=False)
     print("Download complete!")
 
+# -------------------------------
 # Load TFLite model if exists
+# -------------------------------
 if os.path.exists(TFLITE_MODEL_PATH):
     INTERPRETER = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
     INTERPRETER.allocate_tensors()
 
-# Replace with actual 38 classes
+# -------------------------------
+# Replace with your actual 38 classes
+# -------------------------------
 CLASS_NAMES = [f"Class_{i}" for i in range(38)]
 
 # -------------------------------
@@ -70,7 +73,6 @@ async def predict(file: UploadFile = File(...)):
             INTERPRETER.invoke()
             prediction = INTERPRETER.get_tensor(output_details[0]['index'])
         else:
-            # Fallback to original model
             global MODEL
             if MODEL is None:
                 MODEL = tf.keras.models.load_model(MODEL_PATH)
@@ -88,12 +90,6 @@ async def predict(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-# -------------------------------
-# Run on Render
-# -------------------------------
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
 
 
 
