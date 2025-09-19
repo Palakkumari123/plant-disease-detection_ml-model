@@ -19,6 +19,9 @@ TFLITE_MODEL_PATH = "plant_disease_prediction_model.tflite"
 
 # Lazy load interpreter
 INTERPRETER = None
+input_details = None
+output_details = None
+input_shape = None
 
 # -------------------------------
 # Download TFLite model from Google Drive if not exists
@@ -39,6 +42,10 @@ if os.path.exists(TFLITE_MODEL_PATH):
     INTERPRETER.allocate_tensors()
     input_details = INTERPRETER.get_input_details()
     output_details = INTERPRETER.get_output_details()
+
+    # Automatic input shape detection
+    input_shape = input_details[0]['shape']  # e.g., [1, 128, 128, 3]
+    print(f"Model input shape detected: {input_shape}")
 else:
     raise FileNotFoundError("TFLite model not found!")
 
@@ -61,7 +68,8 @@ async def predict(file: UploadFile = File(...)):
     try:
         # Read and preprocess image
         image = Image.open(file.file).convert("RGB")
-        image = image.resize((128, 128))  # Match your model's input size
+        _, height, width, _ = input_shape
+        image = image.resize((width, height))
         img_array = np.array(image, dtype=np.float32) / 255.0
         img_array = np.expand_dims(img_array, axis=0)
 
@@ -81,6 +89,7 @@ async def predict(file: UploadFile = File(...)):
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
 
 
 
